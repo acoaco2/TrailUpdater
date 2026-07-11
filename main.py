@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 from telegram.ext import ApplicationBuilder, PicklePersistence
 
 from trailupdater.bot import register_handlers
+from trailupdater.tracker import schedule
 
 logging.basicConfig(
     format="%(asctime)s %(levelname)s %(name)s: %(message)s", level=logging.INFO
@@ -28,6 +29,7 @@ def main() -> None:
 
     app = ApplicationBuilder().token(token).persistence(persistence).build()
     register_handlers(app)
+    schedule(app)
     logging.info("Bot avviato, in ascolto...")
     app.run_polling()
 

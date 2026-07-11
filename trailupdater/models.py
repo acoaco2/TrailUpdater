@@ -32,3 +32,6 @@ class CheckpointPassage:
     checkpoint_id: str
     checkpoint_name: str
     passed_at: datetime    # UTC
+    # Ordine del checkpoint sul percorso (es. 37 di 79), se noto.
+    checkpoint_position: int | None = None
+    checkpoint_total: int | None = None

@@ -4,7 +4,7 @@ API JSON pubblica su https://api.owaka.live — endpoint documentati in
 ARCHITECTURE.md. Serve uno User-Agent da browser, nessuna autenticazione.
 """
 
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 import httpx
 
@@ -17,6 +17,9 @@ USER_AGENT = (
     "(KHTML, like Gecko) Chrome/126.0 Safari/537.36"
 )
 RUNNERS_CACHE_TTL = timedelta(minutes=30)
+STAGES_CACHE_TTL = timedelta(hours=6)
+# La geografia pesa ~1 MB e non cambia durante la gara: cache lunga.
+WAYPOINTS_CACHE_TTL = timedelta(hours=6)
 
 
 def _parse_date(value: str | None) -> date | None:
@@ -35,6 +38,12 @@ class OwakaProvider(TrackingProvider):
         # event_id -> (scaricati_alle, [Runner]); l'elenco iscritti cambia
         # raramente durante una gara, inutile riscaricarlo ad ogni ricerca.
         self._runners_cache: dict[str, tuple[datetime, list[Runner]]] = {}
+        # event_id -> (scaricati_alle, [stage dict])
+        self._stages_cache: dict[str, tuple[datetime, list[dict]]] = {}
+        # stage_id -> (scaricati_alle, {waypoint_id: (nome, posizione)}, totale)
+        self._waypoints_cache: dict[
+            str, tuple[datetime, dict[str, tuple[str, int | None]], int]
+        ] = {}
 
     async def _get(self, path: str, params: dict | None = None) -> dict | list:
         resp = await self._client.get(path, params=params)
@@ -89,7 +98,62 @@ class OwakaProvider(TrackingProvider):
             or query == r.number.casefold()
         ]
 
+    async def _stages(self, event_id: str) -> list[dict]:
+        cached = self._stages_cache.get(event_id)
+        if cached and datetime.now() - cached[0] < STAGES_CACHE_TTL:
+            return cached[1]
+        data = await self._get(f"/lives/{event_id}/stages")
+        self._stages_cache[event_id] = (datetime.now(), data)
+        return data
+
+    async def _waypoints(
+        self, stage_id: str
+    ) -> tuple[dict[str, tuple[str, int | None]], int]:
+        cached = self._waypoints_cache.get(stage_id)
+        if cached and datetime.now() - cached[0] < WAYPOINTS_CACHE_TTL:
+            return cached[1], cached[2]
+        data = await self._get(f"/stages/{stage_id}/geography")
+        waypoints = data.get("liveStageWaypoints") or []
+        mapping = {
+            w["id"]: (w.get("name") or "checkpoint", w.get("position"))
+            for w in waypoints
+        }
+        total = len(waypoints)
+        self._waypoints_cache[stage_id] = (datetime.now(), mapping, total)
+        return mapping, total
+
     async def get_updates(
         self, event_id: str, since: datetime
     ) -> list[CheckpointPassage]:
-        raise NotImplementedError("Arriva nello step 4 (polling checkpoint).")
+        # startedAt filtra i passaggi con validatedAt >= since (verificato
+        # su dati reali); il filtro fine (strettamente maggiore, per
+        # corridore) lo fa il chiamante.
+        since_param = since.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+        passages: list[CheckpointPassage] = []
+        for stage in await self._stages(event_id):
+            mapping, total = await self._waypoints(stage["id"])
+            data = await self._get(
+                f"/stages/{stage['id']}/latest_checkpoints",
+                params={"startedAt": since_param},
+            )
+            for vehicle in data:
+                for cp in vehicle["checkpoints"]:
+                    name, position = mapping.get(
+                        cp["liveStageWaypointId"], ("checkpoint", None)
+                    )
+                    passages.append(
+                        CheckpointPassage(
+                            provider=self.name,
+                            event_id=event_id,
+                            runner_id=vehicle["liveVehicleId"],
+                            checkpoint_id=cp["liveStageWaypointId"],
+                            checkpoint_name=name,
+                            passed_at=datetime.fromisoformat(cp["validatedAt"]),
+                            checkpoint_position=(
+                                position + 1 if position is not None else None
+                            ),
+                            checkpoint_total=total or None,
+                        )
+                    )
+        passages.sort(key=lambda p: p.passed_at)
+        return passages

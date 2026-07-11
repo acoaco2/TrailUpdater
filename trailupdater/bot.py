@@ -177,8 +177,7 @@ async def runner_selected(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     await query.edit_message_text(
         f"✅ Ora segui {runner['name']} (#{runner['number']}) "
         f"in {runner['event_name']}.\n\n"
-        "Riceverai un messaggio ad ogni passaggio ai checkpoint "
-        "(le notifiche si attivano nel prossimo step di sviluppo).\n"
+        "Riceverai un messaggio ad ogni passaggio ai checkpoint.\n"
         "/seguiti per gestire i corridori seguiti."
     )
 

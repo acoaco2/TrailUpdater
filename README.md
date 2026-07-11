@@ -22,7 +22,7 @@ di tracking [Owaka](https://owaka.live), che è la fonte dati dietro
 - [x] Step 1 — Analisi della fonte dati e architettura (vedi [ARCHITECTURE.md](ARCHITECTURE.md))
 - [x] Step 2 — Bot Telegram (@aco_trailupdater_bot) e scheletro: /start, /gara con selezione
 - [x] Step 3 — /cerca con selezione a bottoni, /seguiti con unfollow, stato persistente su disco
-- [ ] Step 4 — Polling dei checkpoint e invio notifiche
+- [x] Step 4 — Polling dei checkpoint (ogni 3 min) e notifiche Telegram
 - [ ] Step 5 — Rifiniture (formato messaggi, gestione fine gara, deploy)
 
 ## Setup
