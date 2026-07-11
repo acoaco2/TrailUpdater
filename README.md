@@ -23,7 +23,8 @@ di tracking [Owaka](https://owaka.live), che è la fonte dati dietro
 - [x] Step 2 — Bot Telegram (@aco_trailupdater_bot) e scheletro: /start, /gara con selezione
 - [x] Step 3 — /cerca con selezione a bottoni, /seguiti con unfollow, stato persistente su disco
 - [x] Step 4 — Polling dei checkpoint (ogni 3 min) e notifiche Telegram
-- [ ] Step 5 — Rifiniture (formato messaggi, gestione fine gara, deploy)
+- [x] Step 5 — Notifiche arrivo/ritiro, /stato, pulizia gare finite, secondo provider (rankings TORX / Gran Trail Courmayeur)
+- [ ] Step 6 — Avvio automatico all'accensione del PC (opzionale)
 
 ## Setup
 

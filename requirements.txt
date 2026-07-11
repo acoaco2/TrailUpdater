@@ -1,3 +1,4 @@
 python-telegram-bot[job-queue]~=21.11
 httpx~=0.28
+curl_cffi~=0.13
 python-dotenv~=1.0

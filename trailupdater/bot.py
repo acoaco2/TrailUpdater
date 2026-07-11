@@ -10,7 +10,8 @@ from telegram.ext import (
     ContextTypes,
 )
 
-from .providers import get_provider
+from .providers import PROVIDERS, get_provider
+from .tracker import format_passage
 
 logger = logging.getLogger(__name__)
 
@@ -28,21 +29,20 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "1. /gara — scegli la gara\n"
         "2. /cerca <nome o pettorale> — trova il corridore\n"
         "3. Lo selezioni e ti avviso ad ogni checkpoint.\n\n"
-        "Comandi utili: /seguiti per vedere chi stai seguendo.\n"
+        "Comandi utili: /seguiti per gestire chi segui, "
+        "/stato per l'ultima posizione nota.\n"
         "Inizia con /gara"
     )
 
 
 async def gara(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    provider = get_provider("owaka")
-    try:
-        events = await provider.list_events()
-    except Exception:
-        logger.exception("Errore nel recupero delle gare")
-        await update.message.reply_text(
-            "Non riesco a recuperare l'elenco delle gare, riprova tra poco."
-        )
-        return
+    events = []
+    for provider in PROVIDERS.values():
+        try:
+            events.extend(await provider.list_events())
+        except Exception:
+            logger.exception("Errore nel recupero gare (%s)", provider.name)
+    events.sort(key=lambda e: (e.started_at is None, e.started_at))
     if not events:
         await update.message.reply_text("Nessuna gara live al momento.")
         return
@@ -84,6 +84,7 @@ async def event_selected(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         "id": event.id,
         "name": event.name,
         "timezone": event.timezone,
+        "ended_at": event.ended_at.isoformat() if event.ended_at else None,
     }
     await query.edit_message_text(
         f"Gara selezionata: {event.name}\n\n"
@@ -122,6 +123,7 @@ async def cerca(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             "event_id": r.event_id,
             "event_name": event["name"],
             "timezone": event["timezone"],
+            "event_end": event.get("ended_at"),
             "id": r.id,
             "number": r.number,
             "name": r.name,
@@ -204,6 +206,34 @@ async def seguiti(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     )
 
 
+async def stato(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    followed = context.chat_data.get("followed") or []
+    if not followed:
+        await update.message.reply_text(
+            "Non segui nessun corridore. Usa /gara e poi /cerca."
+        )
+        return
+    await update.message.reply_text("Controllo l'ultima posizione nota...")
+    lines = []
+    for follow in followed:
+        provider = get_provider(follow["provider"])
+        try:
+            passage = await provider.get_last_passage(
+                follow["event_id"], follow["id"]
+            )
+        except Exception:
+            logger.exception("Errore /stato per %s", follow["name"])
+            passage = None
+        if passage:
+            lines.append(format_passage(passage, follow))
+        else:
+            lines.append(
+                f"🏃 {follow['name']} (#{follow['number']})\n"
+                f"📍 Nessun passaggio registrato — {follow['event_name']}"
+            )
+    await update.message.reply_text("\n\n".join(lines))
+
+
 async def unfollow(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     await query.answer()
@@ -223,6 +253,7 @@ def register_handlers(app: Application) -> None:
     app.add_handler(CommandHandler("gara", gara))
     app.add_handler(CommandHandler("cerca", cerca))
     app.add_handler(CommandHandler("seguiti", seguiti))
+    app.add_handler(CommandHandler("stato", stato))
     app.add_handler(CallbackQueryHandler(event_selected, pattern=r"^ev\|"))
     app.add_handler(CallbackQueryHandler(runner_selected, pattern=r"^run\|"))
     app.add_handler(CallbackQueryHandler(unfollow, pattern=r"^unf\|"))

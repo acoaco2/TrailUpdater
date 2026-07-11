@@ -35,3 +35,5 @@ class CheckpointPassage:
     # Ordine del checkpoint sul percorso (es. 37 di 79), se noto.
     checkpoint_position: int | None = None
     checkpoint_total: int | None = None
+    # "checkpoint" (passaggio normale), "finish" (traguardo), "dnf" (ritiro).
+    kind: str = "checkpoint"

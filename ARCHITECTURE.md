@@ -30,6 +30,32 @@ Flusso dati per una notifica:
 Nota: l'API usa un User-Agent check blando (serve un UA da browser) ma nessun
 token. Polling educato: ogni 3–5 minuti è più che sufficiente per un trail.
 
+## Secondo provider: rankings TORX (`torx`)
+
+Il Gran Trail Courmayeur e le gare TORX "minori" non usano Owaka ma la
+piattaforma di rankings propria (`rankings.torxtrail.com`, iframe dentro
+live.torxtrail.com). I dati sono JSON statici pubblici sotto
+`https://live.torxtrail.com/rankings/json/`:
+
+| File | Cosa contiene |
+|---|---|
+| `elenco_gare.json` | Tutte le gare, con `id` numerico, `codice`, data, tempo limite |
+| `iscritti_{id}.json` | Iscritti: `pettorale`, nome, cognome, nazionalità |
+| `avanzati_{id}.json` | `postazioni`: checkpoint con nome, `rank`, distanza, GPS |
+| `{id}.json` | Classifica live: per pettorale l'array `crono` dei passaggi |
+
+Codici status del cronometraggio (dal front-end): 0=FINISHED, 194=IN_RACE,
+195=DNF, 196=COM, 197=WRONG_TIMEKEEPING, 198=DSQ, 200=DNS.
+
+Attenzione: il WAF del sito fa **fingerprinting TLS** e rifiuta i client
+HTTP Python standard (httpx/requests → 403 anche con header da browser).
+Il provider usa `curl_cffi` con `impersonate="chrome"`.
+
+Nota sull'arrivo: su Owaka il waypoint del traguardo spesso non viene
+validato via GPS (cronometraggio manuale), quindi la notifica "finish"
+può non scattare; sulla piattaforma rankings TORX la postazione FINISH
+è cronometrata e l'arrivo è affidabile.
+
 ## Struttura del progetto (prevista)
 
 ```

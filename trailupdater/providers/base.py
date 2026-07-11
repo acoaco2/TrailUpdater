@@ -6,7 +6,7 @@ dal rispettivo modulo provider.
 """
 
 from abc import ABC, abstractmethod
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 
 from ..models import CheckpointPassage, Event, Runner
 
@@ -27,3 +27,13 @@ class TrackingProvider(ABC):
         self, event_id: str, since: datetime
     ) -> list[CheckpointPassage]:
         """Passaggi ai checkpoint registrati dopo `since` (UTC)."""
+
+    async def get_last_passage(
+        self, event_id: str, runner_id: str
+    ) -> CheckpointPassage | None:
+        """Ultimo passaggio noto di un corridore (per /stato)."""
+        passages = await self.get_updates(
+            event_id, datetime.now(UTC) - timedelta(days=10)
+        )
+        mine = [p for p in passages if p.runner_id == runner_id]
+        return mine[-1] if mine else None

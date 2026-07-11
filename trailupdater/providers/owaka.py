@@ -141,6 +141,7 @@ class OwakaProvider(TrackingProvider):
                     name, position = mapping.get(
                         cp["liveStageWaypointId"], ("checkpoint", None)
                     )
+                    pos = position + 1 if position is not None else None
                     passages.append(
                         CheckpointPassage(
                             provider=self.name,
@@ -149,11 +150,32 @@ class OwakaProvider(TrackingProvider):
                             checkpoint_id=cp["liveStageWaypointId"],
                             checkpoint_name=name,
                             passed_at=datetime.fromisoformat(cp["validatedAt"]),
-                            checkpoint_position=(
-                                position + 1 if position is not None else None
-                            ),
+                            checkpoint_position=pos,
                             checkpoint_total=total or None,
+                            kind=(
+                                "finish" if pos and pos == total else "checkpoint"
+                            ),
                         )
                     )
+
+        # Ritiri e squalifiche (DNF, DSQ, ...) segnalati dall'organizzazione.
+        statuses = await self._get(
+            f"/lives/{event_id}/vehicle_statuses",
+            params={"startedAt": since_param},
+        )
+        for status in statuses:
+            if status.get("type") in ("DNF", "DSQ", "OUT"):
+                passages.append(
+                    CheckpointPassage(
+                        provider=self.name,
+                        event_id=event_id,
+                        runner_id=status["liveVehicleId"],
+                        checkpoint_id=status["id"],
+                        checkpoint_name="ritiro",
+                        passed_at=datetime.fromisoformat(status["startedAt"]),
+                        kind="dnf",
+                    )
+                )
+
         passages.sort(key=lambda p: p.passed_at)
         return passages

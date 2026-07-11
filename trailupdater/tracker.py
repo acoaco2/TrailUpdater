@@ -20,26 +20,66 @@ POLL_INTERVAL_SECONDS = 180
 # Quando si inizia a seguire un corridore, quanto indietro guardare:
 # così arriva subito l'ultimo passaggio recente invece del silenzio.
 FIRST_LOOKBACK = timedelta(hours=2)
+# Quanti giorni dopo la fine della gara smettere di seguire i corridori.
+CLEANUP_GRACE = timedelta(days=3)
 
 
-def _format_message(passage, follow: dict) -> str:
+def format_passage(passage, follow: dict) -> str:
     tz = ZoneInfo(follow.get("timezone") or "UTC")
     local_time = passage.passed_at.astimezone(tz)
+    when = f"🕐 {local_time:%H:%M} — {follow['event_name']}"
+    who = f"{follow['name']} (#{follow['number']})"
+    if passage.kind == "finish":
+        return (
+            f"🏁 {who} ha tagliato il traguardo!\n"
+            f"📍 {passage.checkpoint_name}\n{when}"
+        )
+    if passage.kind == "dnf":
+        return (
+            f"🔴 {who} risulta ritirato/a.\n{when}\n"
+            "(a volte è un errore di cronometraggio: incrocia le dita)"
+        )
     progress = ""
     if passage.checkpoint_position and passage.checkpoint_total:
         progress = f" ({passage.checkpoint_position}/{passage.checkpoint_total})"
-    return (
-        f"🏃 {follow['name']} (#{follow['number']})\n"
-        f"📍 {passage.checkpoint_name}{progress}\n"
-        f"🕐 {local_time:%H:%M} — {follow['event_name']}"
-    )
+    return f"🏃 {who}\n📍 {passage.checkpoint_name}{progress}\n{when}"
 
 
 async def poll_updates(context: ContextTypes.DEFAULT_TYPE) -> None:
     await run_poll(context.application)
 
 
+async def _cleanup_ended(app: Application) -> None:
+    """Smette di seguire i corridori di gare finite da giorni."""
+    today = datetime.now(UTC).date()
+    for chat_id, data in app.chat_data.items():
+        followed = data.get("followed") or []
+        expired = [
+            f
+            for f in followed
+            if f.get("event_end")
+            and datetime.fromisoformat(f["event_end"]).date() + CLEANUP_GRACE < today
+        ]
+        if not expired:
+            continue
+        for follow in expired:
+            followed.remove(follow)
+            try:
+                await app.bot.send_message(
+                    chat_id,
+                    f"🗑 {follow['event_name']} è finita da qualche giorno: "
+                    f"ho smesso di seguire {follow['name']} "
+                    f"(#{follow['number']}).",
+                )
+            except Exception:
+                logger.exception("Notifica pulizia fallita a chat %s", chat_id)
+        if app.persistence:
+            await app.persistence.update_chat_data(chat_id, data)
+
+
 async def run_poll(app: Application) -> None:
+    await _cleanup_ended(app)
+
     # (provider, event_id) -> [(chat_id, voce followed)]
     groups: dict[tuple[str, str], list[tuple[int, dict]]] = {}
     for chat_id, data in app.chat_data.items():
@@ -79,7 +119,7 @@ async def run_poll(app: Application) -> None:
             for passage in new:
                 try:
                     await app.bot.send_message(
-                        chat_id, _format_message(passage, follow)
+                        chat_id, format_passage(passage, follow)
                     )
                 except Exception:
                     logger.exception("Invio notifica fallito a chat %s", chat_id)
