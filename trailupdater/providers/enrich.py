@@ -70,14 +70,23 @@ def build_passages(
         for key, passed_at, kind, checkpoint_id in entries:
             if kind == "dnf":
                 if passed_at > since:
+                    # Se il ritiro è registrato a una postazione nota,
+                    # riportiamo dove è successo.
+                    name, distance = (
+                        stations.get(key, ("ritiro", None))
+                        if key is not None
+                        else ("ritiro", None)
+                    )
                     passages.append(
                         CheckpointPassage(
                             provider=provider,
                             event_id=event_id,
                             runner_id=runner_id,
                             checkpoint_id=checkpoint_id,
-                            checkpoint_name="ritiro",
+                            checkpoint_name=name,
                             passed_at=passed_at,
+                            checkpoint_position=key,
+                            distance_m=distance,
                             kind="dnf",
                         )
                     )

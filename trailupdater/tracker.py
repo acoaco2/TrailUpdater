@@ -93,8 +93,13 @@ def format_passage(passage, follow: dict) -> str:
             f"📍 {_checkpoint_label(passage)}\n{when}"
         )
     if passage.kind == "dnf":
+        place = ""
+        if passage.checkpoint_name and passage.checkpoint_name != "ritiro":
+            place = f" a {passage.checkpoint_name}"
+            if passage.distance_m:
+                place += f" (km {passage.distance_m / 1000:.1f})"
         return (
-            f"🔴 {who} risulta ritirato/a.\n{when}\n"
+            f"🔴 {who} risulta ritirato/a{place}.\n{when}\n"
             "(a volte è un errore di cronometraggio: incrocia le dita)"
         )
     lines = [f"🏃 {who}{rank}", f"📍 {_checkpoint_label(passage)}", when]
@@ -120,6 +125,8 @@ def format_recap(passages, follow: dict) -> str:
             emoji, label = "🏁", f"{_checkpoint_label(p)} — ARRIVATO/A!"
         elif p.kind == "dnf":
             emoji, label = "🔴", "Ritiro"
+            if p.checkpoint_name and p.checkpoint_name != "ritiro":
+                label = f"Ritiro a {p.checkpoint_name}"
         else:
             emoji, label = "📍", _checkpoint_label(p)
         rank = f" — {p.rank}°" if p.rank else ""

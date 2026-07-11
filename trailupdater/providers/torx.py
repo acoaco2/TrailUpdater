@@ -15,6 +15,7 @@ Codici status (dal front-end): 0=FINISHED, 194=IN_RACE, 195=DNF,
 """
 
 import math
+import time
 from datetime import UTC, date, datetime, timedelta
 
 from curl_cffi.requests import AsyncSession
@@ -47,7 +48,12 @@ class TorxProvider(TrackingProvider):
         ] = {}
 
     async def _get_json(self, path: str) -> dict | list:
-        resp = await self._client.get(JSON_BASE + path)
+        # Cloudflare tiene in cache questi JSON fino a un'ora: senza
+        # cache-buster il polling vedrebbe dati vecchi (l'app ufficiale
+        # fa lo stesso con ?v=timestamp).
+        resp = await self._client.get(
+            f"{JSON_BASE}{path}?v={int(time.time() * 1000)}"
+        )
         resp.raise_for_status()
         return resp.json()
 
