@@ -20,12 +20,18 @@ di tracking [Owaka](https://owaka.live), che è la fonte dati dietro
 ## Stato del progetto
 
 - [x] Step 1 — Analisi della fonte dati e architettura (vedi [ARCHITECTURE.md](ARCHITECTURE.md))
-- [ ] Step 2 — Creazione del bot Telegram (BotFather) e scheletro del progetto
-- [ ] Step 3 — Provider Owaka: elenco gare, ricerca corridori
+- [x] Step 2 — Bot Telegram (@aco_trailupdater_bot) e scheletro: /start, /gara con selezione
+- [ ] Step 3 — Ricerca corridori (/cerca) e selezione del corridore da seguire
 - [ ] Step 4 — Polling dei checkpoint e invio notifiche
 - [ ] Step 5 — Persistenza (iscrizioni, stato) e rifiniture
 
-## Setup (in arrivo)
+## Setup
 
-Il progetto sarà in Python. Servirà un token del bot Telegram (da BotFather),
-configurato via variabile d'ambiente `TELEGRAM_BOT_TOKEN` (mai committato).
+```powershell
+python -m venv .venv
+.\.venv\Scripts\pip install -r requirements.txt
+# crea un file .env con: TELEGRAM_BOT_TOKEN=<token da BotFather>
+.\.venv\Scripts\python main.py
+```
+
+Il token non va mai committato: `.env` è escluso da git.
