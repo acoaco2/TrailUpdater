@@ -1,5 +1,6 @@
 """Avvio del bot TrailUpdater (long polling, nessun webhook)."""
 
+import asyncio
 import logging
 import os
 from pathlib import Path
@@ -31,6 +32,9 @@ def main() -> None:
     register_handlers(app)
     schedule(app)
     logging.info("Bot avviato, in ascolto...")
+    # Da Python 3.14 asyncio.get_event_loop() non crea più il loop da solo,
+    # ma python-telegram-bot 21.x ci fa affidamento dentro run_polling.
+    asyncio.set_event_loop(asyncio.new_event_loop())
     app.run_polling()
 
 
