@@ -37,3 +37,12 @@ class CheckpointPassage:
     checkpoint_total: int | None = None
     # "checkpoint" (passaggio normale), "finish" (traguardo), "dnf" (ritiro).
     kind: str = "checkpoint"
+    # Arricchimenti opzionali (dipendono da cosa espone la piattaforma):
+    rank: int | None = None              # posizione a questo checkpoint
+    distance_m: int | None = None        # distanza dal via di questo checkpoint
+    prev_checkpoint_name: str | None = None
+    prev_passed_at: datetime | None = None
+    prev_distance_m: int | None = None
+    next_checkpoint_name: str | None = None
+    next_distance_m: int | None = None
+    eta_next: datetime | None = None     # stima arrivo al prossimo checkpoint

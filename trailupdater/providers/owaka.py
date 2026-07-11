@@ -4,12 +4,13 @@ API JSON pubblica su https://api.owaka.live — endpoint documentati in
 ARCHITECTURE.md. Serve uno User-Agent da browser, nessuna autenticazione.
 """
 
-from datetime import UTC, date, datetime, timedelta
+from datetime import date, datetime, timedelta
 
 import httpx
 
 from ..models import CheckpointPassage, Event, Runner
 from .base import TrackingProvider
+from .enrich import RawEntry, build_passages
 
 API_BASE = "https://api.owaka.live"
 USER_AGENT = (
@@ -125,57 +126,45 @@ class OwakaProvider(TrackingProvider):
     async def get_updates(
         self, event_id: str, since: datetime
     ) -> list[CheckpointPassage]:
-        # startedAt filtra i passaggi con validatedAt >= since (verificato
-        # su dati reali); il filtro fine (strettamente maggiore, per
-        # corridore) lo fa il chiamante.
-        since_param = since.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%S.000Z")
-        passages: list[CheckpointPassage] = []
+        # Storico completo (senza filtro startedAt): serve tutta la gara
+        # per calcolare posizioni, ritmi e stime; il filtro su `since`
+        # lo applica build_passages.
+        raw: dict[str, list[RawEntry]] = {}
+        stations: dict[int, tuple[str, int | None]] = {}
         for stage in await self._stages(event_id):
-            mapping, total = await self._waypoints(stage["id"])
-            data = await self._get(
-                f"/stages/{stage['id']}/latest_checkpoints",
-                params={"startedAt": since_param},
-            )
+            mapping, _total = await self._waypoints(stage["id"])
+            for name, position in mapping.values():
+                if position is not None:
+                    stations[position + 1] = (name, None)
+            data = await self._get(f"/stages/{stage['id']}/latest_checkpoints")
             for vehicle in data:
+                entries = raw.setdefault(vehicle["liveVehicleId"], [])
                 for cp in vehicle["checkpoints"]:
-                    name, position = mapping.get(
+                    _name, position = mapping.get(
                         cp["liveStageWaypointId"], ("checkpoint", None)
                     )
-                    pos = position + 1 if position is not None else None
-                    passages.append(
-                        CheckpointPassage(
-                            provider=self.name,
-                            event_id=event_id,
-                            runner_id=vehicle["liveVehicleId"],
-                            checkpoint_id=cp["liveStageWaypointId"],
-                            checkpoint_name=name,
-                            passed_at=datetime.fromisoformat(cp["validatedAt"]),
-                            checkpoint_position=pos,
-                            checkpoint_total=total or None,
-                            kind=(
-                                "finish" if pos and pos == total else "checkpoint"
-                            ),
+                    entries.append(
+                        (
+                            position + 1 if position is not None else None,
+                            datetime.fromisoformat(cp["validatedAt"]),
+                            "checkpoint",
+                            cp["liveStageWaypointId"],
                         )
                     )
 
         # Ritiri e squalifiche (DNF, DSQ, ...) segnalati dall'organizzazione.
-        statuses = await self._get(
-            f"/lives/{event_id}/vehicle_statuses",
-            params={"startedAt": since_param},
-        )
+        statuses = await self._get(f"/lives/{event_id}/vehicle_statuses")
         for status in statuses:
             if status.get("type") in ("DNF", "DSQ", "OUT"):
-                passages.append(
-                    CheckpointPassage(
-                        provider=self.name,
-                        event_id=event_id,
-                        runner_id=status["liveVehicleId"],
-                        checkpoint_id=status["id"],
-                        checkpoint_name="ritiro",
-                        passed_at=datetime.fromisoformat(status["startedAt"]),
-                        kind="dnf",
+                raw.setdefault(status["liveVehicleId"], []).append(
+                    (
+                        None,
+                        datetime.fromisoformat(status["startedAt"]),
+                        "dnf",
+                        status["id"],
                     )
                 )
 
-        passages.sort(key=lambda p: p.passed_at)
-        return passages
+        for entries in raw.values():
+            entries.sort(key=lambda e: e[1])
+        return build_passages(self.name, event_id, raw, stations, since)

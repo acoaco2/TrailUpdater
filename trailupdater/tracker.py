@@ -28,25 +28,83 @@ RECAP_LOOKBACK = timedelta(days=14)
 CLEANUP_GRACE = timedelta(days=3)
 
 
+def _fmt_duration(delta: timedelta) -> str:
+    hours, seconds = divmod(int(delta.total_seconds()), 3600)
+    minutes = seconds // 60
+    return f"{hours}h{minutes:02d}" if hours else f"{minutes} min"
+
+
+def _checkpoint_label(passage) -> str:
+    """Nome checkpoint con progresso e km, es. "Youlaz (5/15, km 40.4)"."""
+    details = []
+    if passage.checkpoint_position and passage.checkpoint_total:
+        details.append(f"{passage.checkpoint_position}/{passage.checkpoint_total}")
+    if passage.distance_m:
+        details.append(f"km {passage.distance_m / 1000:.1f}")
+    suffix = f" ({', '.join(details)})" if details else ""
+    return f"{passage.checkpoint_name}{suffix}"
+
+
+def _pace_line(passage) -> str | None:
+    """Ritmo sul tratto dal checkpoint precedente, se calcolabile."""
+    if not passage.prev_passed_at:
+        return None
+    elapsed = passage.passed_at - passage.prev_passed_at
+    if elapsed <= timedelta(0):
+        return None
+    stretch = (
+        f"{passage.prev_checkpoint_name} → {passage.checkpoint_name}"
+        if passage.prev_checkpoint_name
+        else "dal checkpoint precedente"
+    )
+    if passage.distance_m and passage.prev_distance_m is not None:
+        km = (passage.distance_m - passage.prev_distance_m) / 1000
+        if km > 0:
+            speed = km / (elapsed.total_seconds() / 3600)
+            return (
+                f"⏱ {stretch}: {km:.1f} km in {_fmt_duration(elapsed)}"
+                f" ({speed:.1f} km/h)"
+            )
+    return f"⏱ {stretch}: {_fmt_duration(elapsed)}"
+
+
+def _eta_line(passage, tz: ZoneInfo) -> str | None:
+    """Stima d'arrivo al prossimo checkpoint, se disponibile."""
+    if not passage.next_checkpoint_name:
+        return None
+    where = passage.next_checkpoint_name
+    if passage.next_distance_m:
+        where += f" (km {passage.next_distance_m / 1000:.1f})"
+    if not passage.eta_next:
+        return f"⏳ Prossimo: {where}"
+    eta_local = passage.eta_next.astimezone(tz)
+    return f"⏳ Prossimo: {where} — stimato ~{eta_local:%H:%M}"
+
+
 def format_passage(passage, follow: dict) -> str:
     tz = ZoneInfo(follow.get("timezone") or "UTC")
     local_time = passage.passed_at.astimezone(tz)
     when = f"🕐 {local_time:%H:%M} — {follow['event_name']}"
     who = f"{follow['name']} (#{follow['number']})"
+    rank = f" — {passage.rank}°" if passage.rank else ""
     if passage.kind == "finish":
         return (
-            f"🏁 {who} ha tagliato il traguardo!\n"
-            f"📍 {passage.checkpoint_name}\n{when}"
+            f"🏁 {who} ha tagliato il traguardo{rank}!\n"
+            f"📍 {_checkpoint_label(passage)}\n{when}"
         )
     if passage.kind == "dnf":
         return (
             f"🔴 {who} risulta ritirato/a.\n{when}\n"
             "(a volte è un errore di cronometraggio: incrocia le dita)"
         )
-    progress = ""
-    if passage.checkpoint_position and passage.checkpoint_total:
-        progress = f" ({passage.checkpoint_position}/{passage.checkpoint_total})"
-    return f"🏃 {who}\n📍 {passage.checkpoint_name}{progress}\n{when}"
+    lines = [f"🏃 {who}{rank}", f"📍 {_checkpoint_label(passage)}", when]
+    pace = _pace_line(passage)
+    if pace:
+        lines.append(pace)
+    eta = _eta_line(passage, tz)
+    if eta:
+        lines.append(eta)
+    return "\n".join(lines)
 
 
 def format_recap(passages, follow: dict) -> str:
@@ -58,16 +116,14 @@ def format_recap(passages, follow: dict) -> str:
     ]
     for p in passages:
         local_time = p.passed_at.astimezone(tz)
-        progress = ""
-        if p.checkpoint_position and p.checkpoint_total:
-            progress = f" ({p.checkpoint_position}/{p.checkpoint_total})"
         if p.kind == "finish":
-            emoji, name = "🏁", f"{p.checkpoint_name} — ARRIVATO/A!"
+            emoji, label = "🏁", f"{_checkpoint_label(p)} — ARRIVATO/A!"
         elif p.kind == "dnf":
-            emoji, name = "🔴", "Ritiro"
+            emoji, label = "🔴", "Ritiro"
         else:
-            emoji, name = "📍", p.checkpoint_name
-        lines.append(f"{emoji} {local_time:%d/%m %H:%M} — {name}{progress}")
+            emoji, label = "📍", _checkpoint_label(p)
+        rank = f" — {p.rank}°" if p.rank else ""
+        lines.append(f"{emoji} {local_time:%d/%m %H:%M} — {label}{rank}")
     lines.append("\nDa adesso ti avviso ad ogni nuovo passaggio.")
     return "\n".join(lines)
 

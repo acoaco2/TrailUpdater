@@ -21,6 +21,7 @@ from curl_cffi.requests import AsyncSession
 
 from ..models import CheckpointPassage, Event, Runner
 from .base import TrackingProvider
+from .enrich import RawEntry, build_passages
 
 JSON_BASE = "https://live.torxtrail.com/rankings/json"
 RUNNERS_CACHE_TTL = timedelta(minutes=30)
@@ -40,9 +41,9 @@ class TorxProvider(TrackingProvider):
         # standard (httpx/requests): curl_cffi impersona il TLS di Chrome.
         self._client = AsyncSession(impersonate="chrome", timeout=30)
         self._runners_cache: dict[str, tuple[datetime, list[Runner]]] = {}
-        # event_id -> (scaricati_alle, {rank: nome}, rank del traguardo)
+        # event_id -> (scaricati_alle, {rank: (nome, distanza_m)})
         self._stations_cache: dict[
-            str, tuple[datetime, dict[int, str], int | None]
+            str, tuple[datetime, dict[int, tuple[str, int | None]]]
         ] = {}
 
     async def _get_json(self, path: str) -> dict | list:
@@ -116,62 +117,54 @@ class TorxProvider(TrackingProvider):
 
     async def _stations(
         self, event_id: str
-    ) -> tuple[dict[int, str], int | None]:
+    ) -> dict[int, tuple[str, int | None]]:
         cached = self._stations_cache.get(event_id)
         if cached and datetime.now() - cached[0] < STATIONS_CACHE_TTL:
-            return cached[1], cached[2]
+            return cached[1]
         data = await self._get_json(f"/avanzati_{event_id}.json")
-        visible = [
-            p
-            for p in data.get("postazioni", [])
-            if not p.get("postazione_nascosta")
-        ]
-        mapping = {p["rank"]: p["text"] for p in visible}
-        finish_rank = max(mapping) if mapping else None
-        self._stations_cache[event_id] = (datetime.now(), mapping, finish_rank)
-        return mapping, finish_rank
+        mapping: dict[int, tuple[str, int | None]] = {}
+        for p in data.get("postazioni", []):
+            if p.get("postazione_nascosta"):
+                continue
+            distanza = str(p.get("distanza") or "")
+            mapping[p["rank"]] = (
+                p["text"],
+                int(distanza) if distanza.isdigit() else None,
+            )
+        self._stations_cache[event_id] = (datetime.now(), mapping)
+        return mapping
 
     async def get_updates(
         self, event_id: str, since: datetime
     ) -> list[CheckpointPassage]:
-        stations, finish_rank = await self._stations(event_id)
+        stations = await self._stations(event_id)
         data = await self._get_json(f"/{event_id}.json")
         results = data[0].get("result", []) if data else []
 
-        passages: list[CheckpointPassage] = []
+        raw: dict[str, list[RawEntry]] = {}
         for runner in results:
             bib = str(runner.get("bib") or "").strip()
             if not bib:
                 continue
+            entries: list[RawEntry] = []
             for cp in runner.get("crono") or []:
                 if not cp.get("tempo"):
                     continue
                 passed_at = datetime.fromisoformat(cp["tempo"]).astimezone(UTC)
-                if passed_at <= since:
-                    continue
-                rank = cp.get("postazione")
-                if cp.get("type") in (STATUS_DNF, STATUS_DSQ):
-                    kind = "dnf"
-                elif rank is not None and rank == finish_rank:
-                    kind = "finish"
-                else:
-                    kind = "checkpoint"
-                passages.append(
-                    CheckpointPassage(
-                        provider=self.name,
-                        event_id=event_id,
-                        runner_id=bib,
-                        checkpoint_id=str(cp.get("id") or rank),
-                        checkpoint_name=(
-                            "ritiro"
-                            if kind == "dnf"
-                            else stations.get(rank, "checkpoint")
-                        ),
-                        passed_at=passed_at,
-                        checkpoint_position=rank,
-                        checkpoint_total=finish_rank,
-                        kind=kind,
+                kind = (
+                    "dnf"
+                    if cp.get("type") in (STATUS_DNF, STATUS_DSQ)
+                    else "checkpoint"
+                )
+                entries.append(
+                    (
+                        cp.get("postazione"),
+                        passed_at,
+                        kind,
+                        str(cp.get("id") or cp.get("postazione")),
                     )
                 )
-        passages.sort(key=lambda p: p.passed_at)
-        return passages
+            entries.sort(key=lambda e: e[1])
+            raw[bib] = entries
+
+        return build_passages(self.name, event_id, raw, stations, since)
