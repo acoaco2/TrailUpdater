@@ -1,6 +1,7 @@
 """Handler dei comandi Telegram."""
 
 import logging
+from datetime import UTC, datetime
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (
@@ -11,7 +12,7 @@ from telegram.ext import (
 )
 
 from .providers import PROVIDERS, get_provider
-from .tracker import format_passage
+from .tracker import RECAP_LOOKBACK, format_passage, format_recap
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +22,21 @@ MAX_RUNNER_BUTTONS = 10
 # I callback_data di Telegram sono limitati a 64 byte: due UUID non ci
 # stanno, quindi i bottoni portano solo un indice dentro liste temporanee
 # salvate in chat_data ("search_results", "followed").
+
+TELEGRAM_MESSAGE_LIMIT = 4096
+
+
+async def _send_long(bot, chat_id: int, text: str) -> None:
+    """Invia un testo spezzandolo sui newline se supera il limite Telegram."""
+    while text:
+        if len(text) <= TELEGRAM_MESSAGE_LIMIT:
+            await bot.send_message(chat_id, text)
+            return
+        cut = text.rfind("\n", 0, TELEGRAM_MESSAGE_LIMIT)
+        if cut <= 0:
+            cut = TELEGRAM_MESSAGE_LIMIT
+        await bot.send_message(chat_id, text[:cut])
+        text = text[cut:].lstrip("\n")
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -174,14 +190,44 @@ async def runner_selected(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             f"Segui già {runner['name']} (#{runner['number']})."
         )
         return
-    followed.append(dict(runner, last_seen=None))
+    follow = dict(runner, last_seen=None)
+    followed.append(follow)
 
     await query.edit_message_text(
         f"✅ Ora segui {runner['name']} (#{runner['number']}) "
-        f"in {runner['event_name']}.\n\n"
-        "Riceverai un messaggio ad ogni passaggio ai checkpoint.\n"
-        "/seguiti per gestire i corridori seguiti."
+        f"in {runner['event_name']}.\n"
+        "Recupero i passaggi già registrati..."
     )
+
+    # Riepilogo di tutti i passaggi dall'inizio della gara; da qui in poi
+    # il tracker notifica solo quelli nuovi (last_seen = ultimo passaggio).
+    since = datetime.now(UTC) - RECAP_LOOKBACK
+    chat_id = query.message.chat_id
+    try:
+        provider = get_provider(runner["provider"])
+        passages = await provider.get_updates(runner["event_id"], since)
+        mine = [p for p in passages if p.runner_id == runner["id"]]
+    except Exception:
+        logger.exception("Recupero riepilogo fallito per %s", runner["name"])
+        follow["last_seen"] = since.isoformat()
+        await context.bot.send_message(
+            chat_id,
+            "Non riesco a recuperare i passaggi già registrati; "
+            "ti avviso comunque per quelli nuovi.",
+        )
+        return
+
+    if mine:
+        follow["last_seen"] = mine[-1].passed_at.isoformat()
+        await _send_long(context.bot, chat_id, format_recap(mine, follow))
+    else:
+        follow["last_seen"] = since.isoformat()
+        await context.bot.send_message(
+            chat_id,
+            "Nessun passaggio registrato finora: "
+            "ti avviso al primo checkpoint.\n"
+            "/seguiti per gestire i corridori seguiti.",
+        )
 
 
 async def seguiti(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

@@ -17,9 +17,13 @@ from .providers import get_provider
 logger = logging.getLogger(__name__)
 
 POLL_INTERVAL_SECONDS = 180
-# Quando si inizia a seguire un corridore, quanto indietro guardare:
-# così arriva subito l'ultimo passaggio recente invece del silenzio.
+# Alla selezione il bot manda il riepilogo dei passaggi già avvenuti e
+# imposta last_seen; questo lookback resta solo come rete di sicurezza
+# per voci "followed" salvate senza last_seen (es. dati di versioni vecchie).
 FIRST_LOOKBACK = timedelta(hours=2)
+# Quanto indietro guardare per il riepilogo iniziale: copre l'intera
+# durata anche delle gare più lunghe (TOR450: ~10 giorni).
+RECAP_LOOKBACK = timedelta(days=14)
 # Quanti giorni dopo la fine della gara smettere di seguire i corridori.
 CLEANUP_GRACE = timedelta(days=3)
 
@@ -43,6 +47,29 @@ def format_passage(passage, follow: dict) -> str:
     if passage.checkpoint_position and passage.checkpoint_total:
         progress = f" ({passage.checkpoint_position}/{passage.checkpoint_total})"
     return f"🏃 {who}\n📍 {passage.checkpoint_name}{progress}\n{when}"
+
+
+def format_recap(passages, follow: dict) -> str:
+    """Riepilogo compatto di tutti i passaggi già registrati."""
+    tz = ZoneInfo(follow.get("timezone") or "UTC")
+    lines = [
+        f"📋 {follow['name']} (#{follow['number']}) — {follow['event_name']}",
+        "Passaggi finora:",
+    ]
+    for p in passages:
+        local_time = p.passed_at.astimezone(tz)
+        progress = ""
+        if p.checkpoint_position and p.checkpoint_total:
+            progress = f" ({p.checkpoint_position}/{p.checkpoint_total})"
+        if p.kind == "finish":
+            emoji, name = "🏁", f"{p.checkpoint_name} — ARRIVATO/A!"
+        elif p.kind == "dnf":
+            emoji, name = "🔴", "Ritiro"
+        else:
+            emoji, name = "📍", p.checkpoint_name
+        lines.append(f"{emoji} {local_time:%d/%m %H:%M} — {name}{progress}")
+    lines.append("\nDa adesso ti avviso ad ogni nuovo passaggio.")
+    return "\n".join(lines)
 
 
 async def poll_updates(context: ContextTypes.DEFAULT_TYPE) -> None:
