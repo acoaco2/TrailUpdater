@@ -1,7 +1,7 @@
 """Modelli normalizzati, indipendenti dalla piattaforma di tracking."""
 
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 
 @dataclass(frozen=True)
@@ -45,4 +45,7 @@ class CheckpointPassage:
     prev_distance_m: int | None = None
     next_checkpoint_name: str | None = None
     next_distance_m: int | None = None
+    # Corridore che precede a questo checkpoint e distacco da lui.
+    ahead_name: str | None = None
+    ahead_gap: timedelta | None = None
     eta_next: datetime | None = None     # stima arrivo al prossimo checkpoint

@@ -144,6 +144,8 @@ class TorxProvider(TrackingProvider):
         self, event_id: str, since: datetime
     ) -> list[CheckpointPassage]:
         stations = await self._stations(event_id)
+        # Nomi per l'etichetta del corridore che precede (cache di 30 min).
+        names = {r.id: f"{r.name} (#{r.number})" for r in await self._runners(event_id)}
         data = await self._get_json(f"/{event_id}.json")
         results = data[0].get("result", []) if data else []
 
@@ -184,5 +186,5 @@ class TorxProvider(TrackingProvider):
             raw[bib] = entries
 
         return build_passages(
-            self.name, event_id, raw, stations, since, official_ranks
+            self.name, event_id, raw, stations, since, official_ranks, names
         )

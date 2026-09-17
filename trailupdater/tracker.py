@@ -68,6 +68,23 @@ def _pace_line(passage) -> str | None:
     return f"⏱ {stretch}: {_fmt_duration(elapsed)}"
 
 
+def _ahead_line(passage) -> str | None:
+    """Distacco dal corridore che precede a questo checkpoint.
+
+    Solo chi sta davanti: chi insegue non è ancora passato di lì, quindi al
+    momento della notifica un distacco da dietro non esisterebbe ancora.
+    """
+    gap = passage.ahead_gap
+    if gap is None:
+        return None
+    delta = (
+        _fmt_duration(gap)
+        if gap >= timedelta(minutes=1)
+        else f"{int(gap.total_seconds())} s"
+    )
+    return f"🎽 Davanti: {passage.ahead_name or 'chi precede'} — {delta}"
+
+
 def _eta_line(passage, tz: ZoneInfo) -> str | None:
     """Stima d'arrivo al prossimo checkpoint, se disponibile."""
     if not passage.next_checkpoint_name:
@@ -93,10 +110,15 @@ def format_passage(passage, follow: dict) -> str:
     who = f"{follow['name']} (#{follow['number']})"
     rank = f" — {passage.rank}°" if passage.rank else ""
     if passage.kind == "finish":
-        return (
-            f"🏁 {who} ha tagliato il traguardo{rank}!\n"
-            f"📍 {_checkpoint_label(passage)}\n{when}"
-        )
+        lines = [
+            f"🏁 {who} ha tagliato il traguardo{rank}!",
+            f"📍 {_checkpoint_label(passage)}",
+            when,
+        ]
+        ahead = _ahead_line(passage)
+        if ahead:
+            lines.append(ahead)
+        return "\n".join(lines)
     if passage.kind == "dnf":
         place = ""
         if passage.checkpoint_name and passage.checkpoint_name != "ritiro":
@@ -111,6 +133,9 @@ def format_passage(passage, follow: dict) -> str:
     pace = _pace_line(passage)
     if pace:
         lines.append(pace)
+    ahead = _ahead_line(passage)
+    if ahead:
+        lines.append(ahead)
     eta = _eta_line(passage, tz)
     if eta:
         lines.append(eta)

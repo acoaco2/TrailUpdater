@@ -167,4 +167,8 @@ class OwakaProvider(TrackingProvider):
 
         for entries in raw.values():
             entries.sort(key=lambda e: e[1])
-        return build_passages(self.name, event_id, raw, stations, since)
+        # Nomi per l'etichetta del corridore che precede (cache di 30 min).
+        names = {r.id: f"{r.name} (#{r.number})" for r in await self._runners(event_id)}
+        return build_passages(
+            self.name, event_id, raw, stations, since, names=names
+        )

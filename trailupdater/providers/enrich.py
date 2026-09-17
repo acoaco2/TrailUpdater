@@ -6,7 +6,9 @@ per ogni passaggio da notificare:
 - la posizione a quel checkpoint (quanti classificati ci sono passati prima);
 - il checkpoint precedente del corridore (per il ritmo del tratto);
 - il prossimo checkpoint e una stima d'arrivo, usando il tempo mediano
-  impiegato su quel tratto dai corridori che l'hanno già percorso.
+  impiegato su quel tratto dai corridori che l'hanno già percorso;
+- il distacco dal corridore che precede a quel checkpoint (chi insegue non
+  ci è ancora passato, quindi un distacco da dietro non esisterebbe).
 
 I provider devono solo normalizzare i loro dati in questa forma:
 
@@ -23,7 +25,7 @@ passaggi di gara. Se la piattaforma pubblica già la posizione
 per l'ultimo passaggio del corridore: è il numero che l'utente vede sul sito.
 """
 
-from bisect import bisect_right
+from bisect import bisect_left, bisect_right
 from datetime import datetime, timedelta
 from statistics import median
 
@@ -58,9 +60,14 @@ def build_passages(
     stations: dict[int, tuple[str, int | None]],
     since: datetime,
     official_ranks: dict[str, tuple[int, int]] | None = None,
+    names: dict[str, str] | None = None,
 ) -> list[CheckpointPassage]:
-    """``official_ranks``: runner_id -> (station_key, posizione ufficiale)."""
+    """``official_ranks``: runner_id -> (station_key, posizione ufficiale).
+
+    ``names``: runner_id -> nome da mostrare per il corridore che precede.
+    """
     official_ranks = official_ranks or {}
+    names = names or {}
     finish_key = max(stations) if stations else None
     station_keys = sorted(stations)
     # Le piattaforme numerano le postazioni con codici propri (TORX va di
@@ -74,8 +81,8 @@ def build_passages(
         if any(kind == "dnf" for _, _, kind, _ in entries)
     }
 
-    # Orari di passaggio per postazione (solo passaggi cronometrati).
-    station_times: dict[int, list[datetime]] = {}
+    # Passaggi cronometrati per postazione: (orario, corridore), ordinati.
+    station_entries: dict[int, list[tuple[datetime, str]]] = {}
     # Tempi osservati su ogni tratto percorso senza checkpoint intermedi.
     segment_times: dict[tuple[int, int], list[timedelta]] = {}
     for runner_id, entries in raw.items():
@@ -84,14 +91,26 @@ def build_passages(
         # peggiori di quelle pubblicate dal sito.
         if runner_id not in retired:
             for key, passed_at in timed:
-                station_times.setdefault(key, []).append(passed_at)
+                station_entries.setdefault(key, []).append((passed_at, runner_id))
         # Per le stime d'arrivo invece i tratti che hanno percorso prima di
         # ritirarsi restano campioni validi.
         for (k1, t1), (k2, t2) in zip(timed, timed[1:]):
             if k2 > k1 and t2 > t1:
                 segment_times.setdefault((k1, k2), []).append(t2 - t1)
-    for times in station_times.values():
-        times.sort()
+    for entries_at in station_entries.values():
+        entries_at.sort()
+    station_times = {k: [t for t, _ in v] for k, v in station_entries.items()}
+
+    def ahead_of(key: int, passed_at: datetime) -> tuple[str | None, timedelta | None]:
+        """Chi precede a questa postazione e di quanto, al momento del passaggio."""
+        entries_at = station_entries.get(key)
+        if not entries_at:
+            return None, None
+        i = bisect_left(station_times[key], passed_at)
+        if i == 0:  # nessuno è ancora passato di qui: è il primo
+            return None, None
+        prev_time, prev_id = entries_at[i - 1]
+        return names.get(prev_id), passed_at - prev_time
 
     def eta_for(key: int, passed_at: datetime) -> tuple[int | None, datetime | None]:
         """(prossima postazione, stima d'arrivo) dopo la postazione key."""
@@ -165,6 +184,7 @@ def build_passages(
             next_name = next_dist = None
             if next_key is not None:
                 next_name, next_dist = stations[next_key]
+            ahead_name, ahead_gap = ahead_of(key, passed_at)
 
             passages.append(
                 CheckpointPassage(
@@ -185,6 +205,8 @@ def build_passages(
                     next_checkpoint_name=next_name,
                     next_distance_m=next_dist,
                     eta_next=eta,
+                    ahead_name=ahead_name,
+                    ahead_gap=ahead_gap,
                 )
             )
 
