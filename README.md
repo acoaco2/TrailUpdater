@@ -8,6 +8,24 @@ Prima gara supportata: **TORX** (Tor des Géants ecc.) tramite la piattaforma
 di tracking [Owaka](https://owaka.live), che è la fonte dati dietro
 [live.torxtrail.com](https://live.torxtrail.com/).
 
+## ▶️ Avviare il bot (Windows)
+
+Da PowerShell, nella cartella del progetto:
+
+```powershell
+cd C:\Users\acoac\OneDrive\acodev\TrailUpdater
+.\.venv\Scripts\python main.py
+```
+
+- Il bot è attivo quando compare `Application started`.
+- Resta attivo solo finché la finestra è aperta e il PC è acceso (non in sospensione).
+- **Per fermarlo usa Ctrl+C**: così gli utenti ricevono l'avviso "Bot spento".
+  Chiudendo la finestra con la X l'avviso non parte.
+- Tieni avviata **una sola istanza** alla volta: con due istanze sullo stesso
+  token Telegram rifiuta la seconda (errore `Conflict`).
+- L'avviso `PTBUserWarning: Could not add signal handlers...` è normale su
+  Windows e si può ignorare.
+
 ## Obiettivi
 
 - Cercare e selezionare un corridore direttamente dal bot Telegram.
@@ -26,7 +44,7 @@ di tracking [Owaka](https://owaka.live), che è la fonte dati dietro
 - [x] Step 5 — Notifiche arrivo/ritiro, /stato, pulizia gare finite, secondo provider (rankings TORX / Gran Trail Courmayeur)
 - [ ] Step 6 — Avvio automatico all'accensione del PC (opzionale)
 
-## Setup
+## Setup (solo la prima volta)
 
 ```powershell
 python -m venv .venv
