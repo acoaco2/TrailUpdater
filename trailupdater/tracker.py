@@ -74,6 +74,11 @@ def _eta_line(passage, tz: ZoneInfo) -> str | None:
         return None
     where = passage.next_checkpoint_name
     if passage.next_distance_m:
+        # Quanto manca al prossimo checkpoint, oltre al km di percorso.
+        if passage.distance_m is not None:
+            gap = (passage.next_distance_m - passage.distance_m) / 1000
+            if gap > 0:
+                where += f" tra {gap:.1f} km"
         where += f" (km {passage.next_distance_m / 1000:.1f})"
     if not passage.eta_next:
         return f"⏳ Prossimo: {where}"

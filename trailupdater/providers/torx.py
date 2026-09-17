@@ -148,10 +148,20 @@ class TorxProvider(TrackingProvider):
         results = data[0].get("result", []) if data else []
 
         raw: dict[str, list[RawEntry]] = {}
+        # bib -> (postazione, posizione in classifica) come li pubblica il
+        # sito: la piattaforma ordina i corridori ancora in gara per punto
+        # più avanzato raggiunto e, a parità, per orario, e non conta i
+        # ritirati. Ricalcolarla in locale darebbe numeri diversi da quelli
+        # che l'utente vede sul sito (un ritirato può avere passaggi
+        # registrati dopo il ritiro, es. il chip letto al rientro).
+        official_ranks: dict[str, tuple[int, int]] = {}
         for runner in results:
             bib = str(runner.get("bib") or "").strip()
             if not bib:
                 continue
+            posizione, postazione = runner.get("posizione"), runner.get("postazione")
+            if posizione and postazione is not None:
+                official_ranks[bib] = (postazione, posizione)
             entries: list[RawEntry] = []
             for cp in runner.get("crono") or []:
                 if not cp.get("tempo"):
@@ -173,4 +183,6 @@ class TorxProvider(TrackingProvider):
             entries.sort(key=lambda e: e[1])
             raw[bib] = entries
 
-        return build_passages(self.name, event_id, raw, stations, since)
+        return build_passages(
+            self.name, event_id, raw, stations, since, official_ranks
+        )
