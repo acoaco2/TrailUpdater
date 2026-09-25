@@ -13,7 +13,7 @@ di tracking [Owaka](https://owaka.live), che è la fonte dati dietro
 Da PowerShell, nella cartella del progetto:
 
 ```powershell
-cd C:\Users\acoac\OneDrive\acodev\TrailUpdater
+cd C:\Users\acoac\acodev\TrailUpdater
 .\.venv\Scripts\python main.py
 ```
 
