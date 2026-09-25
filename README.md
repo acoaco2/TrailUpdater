@@ -8,6 +8,28 @@ Prima gara supportata: **TORX** (Tor des Géants ecc.) tramite la piattaforma
 di tracking [Owaka](https://owaka.live), che è la fonte dati dietro
 [live.torxtrail.com](https://live.torxtrail.com/).
 
+## ▶️ Avviare il bot sulla Raspberry Pi (consigliato)
+
+Il bot è installato sulla Raspberry Pi di casa come servizio systemd **utente**
+(`~/.config/systemd/user/trailupdater.service`, codice in `~/TrailUpdater`).
+Resta acceso anche con il PC spento. Di norma è **spento**: si accende quando
+corrono gli amici.
+
+```bash
+ssh rasp
+systemctl --user start trailupdater     # accende (i follower ricevono "Bot avviato")
+systemctl --user stop trailupdater      # spegne (i follower ricevono "Bot spento")
+systemctl --user status trailupdater    # stato
+journalctl --user -u trailupdater -f    # log in tempo reale
+```
+
+- Si può fare anche dal telefono, con un client SSH (per esempio Termius).
+- Se il bot va in errore si riavvia da solo (`Restart=on-failure`). Per farlo
+  partire anche a ogni avvio della Raspberry: `systemctl --user enable trailupdater`.
+- Aggiornare il codice: `cd ~/TrailUpdater && git pull && systemctl --user restart trailupdater`.
+- Lo stato (`data/bot_state.pkl`) della Raspberry è separato da quello del PC.
+- **Non avviarlo contemporaneamente sul PC** (errore `Conflict`, vedi sotto).
+
 ## ▶️ Avviare il bot (Windows)
 
 Da PowerShell, nella cartella del progetto:
